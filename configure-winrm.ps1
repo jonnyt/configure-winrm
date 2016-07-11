@@ -5,6 +5,7 @@ Ref:  https://technet.microsoft.com/en-us/library/cc782312(v=ws.10).aspx
 [cmdletbinding(SupportsShouldProcess=$True)]
 Param(
     [Parameter(Mandatory=$false)][switch]$AllowSelfSigned=[switch]$false,
+    [Parameter(Mandatory=$false)][switch]$Force=[switch]$false,
     [Parameter(Mandatory=$false)][string]$CertTemplate='UCB.Computer.Authentication.V2'
 )
 
@@ -40,10 +41,10 @@ Function Get-SignedCertByNameAndTempate($fqdn,$template)
 
     foreach($cert in $allCerts)
     {
-        $temp = $prints[0].Extensions | ? {$_.Oid.Value -eq "1.3.6.1.4.1.311.20.2"}
+        $temp = $cert[0].Extensions | ? {$_.Oid.Value -eq "1.3.6.1.4.1.311.20.2"}
         if($temp -eq $null)
         {
-            $temp = $prints[0].Extensions | ? {$_.Oid.Value -eq "1.3.6.1.4.1.311.21.7"}
+            $temp = $cert[0].Extensions | ? {$_.Oid.Value -eq "1.3.6.1.4.1.311.21.7"}
         }
         if($temp -ne $null)
         {
@@ -105,7 +106,15 @@ $thumbprint = $myCert.Thumbprint
 # Create an HTTPS listener with the cert thumbprint
 if(!$WhatIfPreference)
 {
-    New-WSManInstance WinRM/Config/Listener -SelectorSet @{Address = "*"; Transport = "HTTPS"} -ValueSet @{Hostname = $fqdn; CertificateThumbprint = $thumbprint}
+    if($Force)
+    {
+        Remove-WSManInstance WinRM/Config/Listener -SelectorSet @{Address = "*"; Transport = "HTTPS"} -ErrorAction SilentlyContinue
+        New-WSManInstance WinRM/Config/Listener -SelectorSet @{Address = "*"; Transport = "HTTPS"} -ValueSet @{Hostname = $fqdn; CertificateThumbprint = $thumbprint}
+    }
+    else
+    {
+        New-WSManInstance WinRM/Config/Listener -SelectorSet @{Address = "*"; Transport = "HTTPS"} -ValueSet @{Hostname = $fqdn; CertificateThumbprint = $thumbprint}
+    }
 }
 else
 {
