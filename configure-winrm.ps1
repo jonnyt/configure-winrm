@@ -1,6 +1,14 @@
-Import-Module servermanager
+<#
+Ref:  https://technet.microsoft.com/en-us/library/cc782312(v=ws.10).aspx
+#>
 
-$templateName = 'UCB.Computer.Authentication.V2'
+[cmdletbinding(SupportsShouldProcess=$True)]
+Param(
+    [Parameter(Mandatory=$false)][switch]$AllowSelfSigned=[switch]$false,
+    [Parameter(Mandatory=$false)][string]$CertTemplate='UCB.Computer.Authentication.V2'
+)
+
+Import-Module servermanager
 
 # Get our FQDN
 $tcpipParms = Get-Item -Path HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters
@@ -9,7 +17,7 @@ $fqdn = "$($tcpipParms.GetValue("Hostname")).$($tcpipParms.GetValue("NV Domain")
 # Install WinRM if not already there
 if(!(Get-WindowsFeature -Name 'WinRM-IIS-Ext').Installed)
 {
-    Add-WindowsFeature WinRm-IIS-Ext
+    Add-WindowsFeature WinRm-IIS-Ext -WhatIf:$WhatIfPreference
 }
 
 # Do enable-psremoting first.... then run through other settings?
@@ -37,7 +45,7 @@ Function Get-SignedCertByNameAndTempate($fqdn,$template)
         if($temp -ne $null)
         {
             $template = $temp.Format(1)
-            if($template.Contains($templateName))
+            if($template.Contains($CertTemplate))
             {
                 return $cert
             }
@@ -82,14 +90,21 @@ Function Create-SelfSignedCertificate($fqdn)
 }
 
 # Get an appropriate certificate
-$myCert = Get-SignedCertByNameAndTempate -fqdn $fqdn -template $templateName
-if($myCert -eq $null)
+$myCert = Get-SignedCertByNameAndTempate -fqdn $fqdn -template $CertTemplate
+if($myCert -eq $null -and $AllowSelfSigned)
 {
-    # generate a self-signed cert?
+    $myCert = Create-SelfSignedCertificate -fqdn $fqdn
 }
 
-# Get our cert thumbprint and add the HTTPS listener
-
+# Get our cert thumbprint
 $thumbprint = $myCert.Thumbprint
-# Create a WinRM listener, identifying the SSL certificate by the thumbprint
-New-WSManInstance WinRM/Config/Listener -SelectorSet @{Address = "*"; Transport = "HTTPS"} -ValueSet @{Hostname = $fqdn; CertificateThumbprint = $thumbprint}
+
+# Create an HTTPS listener with the cert thumbprint
+if(!$WhatIfPreference)
+{
+    New-WSManInstance WinRM/Config/Listener -SelectorSet @{Address = "*"; Transport = "HTTPS"} -ValueSet @{Hostname = $fqdn; CertificateThumbprint = $thumbprint}
+}
+else
+{
+    Write-Output "WhatIf: WinRM/Config/Listener -SelectorSet @{Address = `"*`"; Transport = `"HTTPS`"} -ValueSet @{Hostname = $fqdn; CertificateThumbprint = $thumbprint}"
+}
