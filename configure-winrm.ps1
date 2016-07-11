@@ -27,8 +27,11 @@ Set-WSManInstance WinRM/Config/Service/Auth -ValueSet @{Certificate = $true}
 Set-WSManInstance WinRM/Config/Service/Auth -ValueSet @{Basic = $false}
 Set-WSManInstance WinRM/Config/Service/Auth -ValueSet @{Kerberos = $true}
 Set-WSManInstance WinRM/Config/Service -ValueSet @{AllowUnencrypted = $false}
+Set-WSManInstance WinRM/Config/Service -ValueSet @{MaxConcurrentOperationsPerUser="100"}
 Set-WSManInstance WinRM/Config/WinRS -ValueSet @{MaxMemoryPerShellMB = 1024}
 Set-WSManInstance WinRM/Config/Client -ValueSet @{TrustedHosts="*"}
+Set-WSManInstance WinRM/Config -ValueSet @{MaxTimeoutms="300000"} # 5 minutes
+
 
 # Check for our certificate using the given template name
 Function Get-SignedCertByNameAndTempate($fqdn,$template)
