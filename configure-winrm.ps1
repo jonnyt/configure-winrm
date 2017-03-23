@@ -1,12 +1,8 @@
-<#
-Ref:  https://technet.microsoft.com/en-us/library/cc782312(v=ws.10).aspx
-#>
-
-[cmdletbinding(SupportsShouldProcess=$True)]
+[cmdletbinding(SupportsShouldProcess = $True)]
 Param(
-    [Parameter(Mandatory=$false)][switch]$AllowSelfSigned=[switch]$false,
-    [Parameter(Mandatory=$false)][switch]$Force=[switch]$false,
-    [Parameter(Mandatory=$false)][string]$CertTemplate='UCB.Computer.Authentication.V2'
+    [Parameter(Mandatory = $false)][switch]$AllowSelfSigned = [switch]$false,
+    [Parameter(Mandatory = $false)][switch]$Force = [switch]$false,
+    [Parameter(Mandatory = $false)][string]$CertTemplate
 )
 
 Import-Module servermanager
@@ -16,8 +12,7 @@ $tcpipParms = Get-Item -Path HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Param
 $fqdn = "$($tcpipParms.GetValue("Hostname")).$($tcpipParms.GetValue("NV Domain"))"
 
 # Install WinRM if not already there
-if(!(Get-WindowsFeature -Name 'WinRM-IIS-Ext').Installed)
-{
+if (!(Get-WindowsFeature -Name 'WinRM-IIS-Ext').Installed) {
     Add-WindowsFeature WinRm-IIS-Ext -WhatIf:$WhatIfPreference
 }
 
@@ -28,37 +23,31 @@ Set-WSManInstance WinRM/Config/Service/Auth -ValueSet @{Certificate = $true}
 Set-WSManInstance WinRM/Config/Service/Auth -ValueSet @{Basic = $false}
 Set-WSManInstance WinRM/Config/Service/Auth -ValueSet @{Kerberos = $true}
 Set-WSManInstance WinRM/Config/Service -ValueSet @{AllowUnencrypted = $false}
-Set-WSManInstance WinRM/Config/Service -ValueSet @{MaxConcurrentOperationsPerUser="100"}
+Set-WSManInstance WinRM/Config/Service -ValueSet @{MaxConcurrentOperationsPerUser = "100"}
 Set-WSManInstance WinRM/Config/WinRS -ValueSet @{MaxMemoryPerShellMB = 1024}
-Set-WSManInstance WinRM/Config/Client -ValueSet @{TrustedHosts="*"}
-Set-WSManInstance WinRM/Config -ValueSet @{MaxTimeoutms="300000"} # 5 minutes
-
+Set-WSManInstance WinRM/Config/Client -ValueSet @{TrustedHosts = "*"}
+Set-WSManInstance WinRM/Config -ValueSet @{MaxTimeoutms = "300000"} # 5 minutes
 
 # Check for our certificate using the given template name
-Function Get-SignedCertByNameAndTempate($fqdn,$template)
-{
+Function Get-SignedCertByNameAndTempate($fqdn, $template) {
     $allCerts = Get-Childitem -path cert:\LocalMachine\My | ? {$_.Subject -eq "cn=$fqdn"}
 
-    foreach($cert in $allCerts)
-    {
-        $temp = $cert[0].Extensions | ? {$_.Oid.Value -eq "1.3.6.1.4.1.311.20.2"}
-        if($temp -eq $null)
-        {
-            $temp = $cert[0].Extensions | ? {$_.Oid.Value -eq "1.3.6.1.4.1.311.21.7"}
+    foreach ($cert in $allCerts) {
+        $temp = $cert[0].Extensions | Where-Object {$_.Oid.Value -eq "1.3.6.1.4.1.311.20.2"}
+        if ($temp -eq $null) {
+            $temp = $cert[0].Extensions | Where-Object {$_.Oid.Value -eq "1.3.6.1.4.1.311.21.7"}
         }
-        if($temp -ne $null)
-        {
+        if ($temp -ne $null) {
             $template = $temp.Format(1)
-            if($template.Contains($CertTemplate))
-            {
+            if ($template.Contains($CertTemplate)) {
                 return $cert
             }
         }
     }
 }
 
-Function Create-SelfSignedCertificate($fqdn)
-{
+# Only do this for testing
+Function Create-SelfSignedCertificate($fqdn) {
     # From: http://blogs.technet.com/b/vishalagarwal/archive/2009/08/22/generating-a-certificate-self-signed-using-powershell-and-certenroll-interfaces.aspx
     $name = new-object -com "X509Enrollment.CX500DistinguishedName.1"
     $name.Encode("CN=$hostname", 0)
@@ -95,8 +84,7 @@ Function Create-SelfSignedCertificate($fqdn)
 
 # Get an appropriate certificate
 $myCert = Get-SignedCertByNameAndTempate -fqdn $fqdn -template $CertTemplate
-if($myCert -eq $null -and $AllowSelfSigned)
-{
+if ($myCert -eq $null -and $AllowSelfSigned) {
     $myCert = Create-SelfSignedCertificate -fqdn $fqdn
 }
 
@@ -104,19 +92,15 @@ if($myCert -eq $null -and $AllowSelfSigned)
 $thumbprint = $myCert.Thumbprint
 
 # Create an HTTPS listener with the cert thumbprint
-if(!$WhatIfPreference)
-{
-    if($Force)
-    {
+if (!$WhatIfPreference) {
+    if ($Force) {
         Remove-WSManInstance WinRM/Config/Listener -SelectorSet @{Address = "*"; Transport = "HTTPS"} -ErrorAction SilentlyContinue
         New-WSManInstance WinRM/Config/Listener -SelectorSet @{Address = "*"; Transport = "HTTPS"} -ValueSet @{Hostname = $fqdn; CertificateThumbprint = $thumbprint}
     }
-    else
-    {
+    else {
         New-WSManInstance WinRM/Config/Listener -SelectorSet @{Address = "*"; Transport = "HTTPS"} -ValueSet @{Hostname = $fqdn; CertificateThumbprint = $thumbprint}
     }
 }
-else
-{
+else {
     Write-Output "WhatIf: WinRM/Config/Listener -SelectorSet @{Address = `"*`"; Transport = `"HTTPS`"} -ValueSet @{Hostname = $fqdn; CertificateThumbprint = $thumbprint}"
 }
